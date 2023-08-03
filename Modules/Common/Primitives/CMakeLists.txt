@@ -1,4 +1,4 @@
-set(TARGET_NAME "${PROJECT_NAME}Primitives")
+set(TARGET_NAME "VCMPrimitives")
 
 file(GLOB_RECURSE HEADER_FILES "*.h")
 file(GLOB_RECURSE HPP_FILES "*.hpp")
@@ -7,7 +7,7 @@ file(GLOB_RECURSE CPP_FILES "*.cpp")
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${HEADER_FILES} ${HPP_FILES} ${CPP_FILES})
 
 add_library(${TARGET_NAME} ${HEADER_FILES} ${CPP_FILES} ${HEADER_FILES} ${HPP_FILES})
-add_library(${PROJECT_NAME}::Primitives ALIAS ${TARGET_NAME})
+add_library(VCM::Primitives ALIAS ${TARGET_NAME})
 
 set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD 17)
 set_target_properties(${TARGET_NAME} PROPERTIES FOLDER Modules)
@@ -33,7 +33,7 @@ set_target_properties(${TARGET_NAME}
 )
 
 if(PRECOMPILED_HEADERS_ENABLED)
-    target_precompile_headers(${TARGET_NAME} REUSE_FROM ${PROJECT_NAME}CommonPrecompiledHeaders)
+    target_precompile_headers(${TARGET_NAME} REUSE_FROM VCMCommonPrecompiledHeaders)
     target_link_libraries(${TARGET_NAME} 
         PUBLIC
             ${PROJECT_NAME}CommonPrecompiledHeaders
