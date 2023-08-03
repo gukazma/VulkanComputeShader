@@ -8,17 +8,25 @@ struct QueueInfo
     std::optional<uint32_t> family;
 } queueInfo;
 
-vk::Instance instance;
-vk::PhysicalDevice phyDevice;
+vk::Instance            instance;
+vk::PhysicalDevice      phyDevice;
 vk::Device              device;
-vk::Queue              computeQueue;
+vk::Queue               computeQueue;
 vk::DescriptorSetLayout setLayout;
+vk::PipelineLayout      layout;
+vk::Pipeline            computePipline;
+vk::CommandPool         cmdPool;
+vk::DescriptorPool      descriptorPool;
 
-vk::Instance CreateInstance();
-vk::PhysicalDevice PickupPhysicalDevice();
-vk::Device         CreateDevice();
+
+vk::Instance            CreateInstance();
+vk::PhysicalDevice      PickupPhysicalDevice();
+vk::Device              CreateDevice();
 vk::DescriptorSetLayout CreateSetLayout();
+vk::PipelineLayout      CreatePiplineLayout();
 vk::Pipeline            CreateComputePipline();
+vk::CommandPool         CreateCmdPool();
+vk::DescriptorPool      CreateDescriptorPool();
 
 TEST(VCS, SimpleEx)
 {
@@ -27,7 +35,10 @@ TEST(VCS, SimpleEx)
     device    = CreateDevice();
     computeQueue = device.getQueue(queueInfo.family.value(), 0);
     setLayout    = CreateSetLayout();
-
+    layout       = CreatePiplineLayout();
+    computePipline = CreateComputePipline();
+    cmdPool        = CreateCmdPool();
+    descriptorPool = CreateDescriptorPool();
 }
 
 vk::Instance CreateInstance()
@@ -82,26 +93,49 @@ vk::DescriptorSetLayout CreateSetLayout()
     return device.createDescriptorSetLayout(createInfo);
 }
 
-vk::Pipeline CreateComputePipline()
+vk::PipelineLayout CreatePiplineLayout()
 {
+    vk::PipelineLayoutCreateInfo createInfo;
+    createInfo.setSetLayouts(setLayout);
 
+    return device.createPipelineLayout(createInfo);
 }
 
-
-std::vector<char> ReadWholeFile(const std::string& filename)
+vk::Pipeline CreateComputePipline()
 {
-    std::ifstream file(filename, std::ios::binary | std::ios::ate);
+    vk::ShaderModuleCreateInfo moduleCreateInfo;
+    moduleCreateInfo.pCode = shader_comp;
+    moduleCreateInfo.codeSize = sizeof(shader_comp);
 
-    if (!file.is_open()) {
-        std::cout << "read " << filename << " failed" << std::endl;
-        return std::vector<char>{};
+    vk::ShaderModule module = device.createShaderModule(moduleCreateInfo);
+    vk::PipelineShaderStageCreateInfo stageCreateInfo;
+    stageCreateInfo.setModule(module).setPName("main").setStage(vk::ShaderStageFlagBits::eCompute);
+
+    vk::ComputePipelineCreateInfo createInfo;
+    createInfo.setLayout(layout).setStage(stageCreateInfo);
+
+    auto result = device.createComputePipeline({}, createInfo);
+    if (result.result != vk::Result::eSuccess) {
+        std::cout << "create compute pipline failed" << std::endl;
     }
 
-    auto              size = file.tellg();
-    std::vector<char> content(size);
-    file.seekg(0);
+    device.destroyShaderModule(module);
+    return result.value;
+}
 
-    file.read(content.data(), content.size());
+vk::CommandPool CreateCmdPool()
+{
+    vk::CommandPoolCreateInfo createInfo;
+    createInfo.setQueueFamilyIndex(queueInfo.family.value())
+        .setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer);
+    return device.createCommandPool(createInfo);
+}
 
-    return content;
+vk::DescriptorPool CreateDescriptorPool()
+{
+    vk::DescriptorPoolCreateInfo createInfo;
+    vk::DescriptorPoolSize       size;
+    size.setType(vk::DescriptorType::eStorageBuffer).setDescriptorCount(1);
+    createInfo.setMaxSets(1).setPoolSizes(size);
+    return device.createDescriptorPool(createInfo);
 }
