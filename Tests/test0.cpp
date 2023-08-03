@@ -3,6 +3,8 @@
 #include <vulkan/vulkan.hpp>
 #include <optional>
 #include "shader/shader_comp.h"
+#include <memory>
+#include "buffer.hpp"
 struct QueueInfo
 {
     std::optional<uint32_t> family;
@@ -14,10 +16,10 @@ vk::Device              device;
 vk::Queue               computeQueue;
 vk::DescriptorSetLayout setLayout;
 vk::PipelineLayout      layout;
-vk::Pipeline            computePipline;
+vk::Pipeline            computePipeline;
 vk::CommandPool         cmdPool;
 vk::DescriptorPool      descriptorPool;
-
+std::unique_ptr<Buffer> storageBuffer;
 
 vk::Instance            CreateInstance();
 vk::PhysicalDevice      PickupPhysicalDevice();
@@ -27,6 +29,9 @@ vk::PipelineLayout      CreatePiplineLayout();
 vk::Pipeline            CreateComputePipline();
 vk::CommandPool         CreateCmdPool();
 vk::DescriptorPool      CreateDescriptorPool();
+vk::DescriptorSet       AllocateDescriptorSet();
+vk::CommandBuffer       AllocateCmdBuf();
+void                    UpdateDescriptorSet(vk::DescriptorSet);
 
 TEST(VCS, SimpleEx)
 {
@@ -36,9 +41,51 @@ TEST(VCS, SimpleEx)
     computeQueue = device.getQueue(queueInfo.family.value(), 0);
     setLayout    = CreateSetLayout();
     layout       = CreatePiplineLayout();
-    computePipline = CreateComputePipline();
+    computePipeline = CreateComputePipline();
     cmdPool        = CreateCmdPool();
     descriptorPool = CreateDescriptorPool();
+
+    storageBuffer.reset(new Buffer(
+        phyDevice,
+        device,
+        vk::BufferUsageFlagBits::eStorageBuffer,
+        sizeof(unsigned int) * 4,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent));
+
+    auto set = AllocateDescriptorSet();
+    auto cmd = AllocateCmdBuf();
+
+    UpdateDescriptorSet(set);
+
+    vk::CommandBufferBeginInfo beginInfo;
+    beginInfo.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+    cmd.begin(beginInfo);
+    cmd.bindPipeline(vk::PipelineBindPoint::eCompute, computePipeline);
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, layout, 0, {set}, {});
+    cmd.dispatch(1, 1, 1);
+    cmd.end();
+
+    vk::SubmitInfo info;
+    info.setCommandBuffers(cmd);
+    computeQueue.submit(info);
+
+    device.waitIdle();
+
+    unsigned int data[4] = {0};
+    memcpy(data, storageBuffer->map, sizeof(data));
+
+    for (auto value : data) {
+        std::cout << value << std::endl;
+    }
+
+    storageBuffer.reset();
+    device.destroyCommandPool(cmdPool);
+    device.destroyDescriptorPool(descriptorPool);
+    device.destroyPipeline(computePipeline);
+    device.destroyPipelineLayout(layout);
+    device.destroyDescriptorSetLayout(setLayout);
+    device.destroy();
+    instance.destroy();
 }
 
 vk::Instance CreateInstance()
@@ -138,4 +185,34 @@ vk::DescriptorPool CreateDescriptorPool()
     size.setType(vk::DescriptorType::eStorageBuffer).setDescriptorCount(1);
     createInfo.setMaxSets(1).setPoolSizes(size);
     return device.createDescriptorPool(createInfo);
+}
+
+vk::DescriptorSet AllocateDescriptorSet()
+{
+    std::array                    layouts = {setLayout};
+    vk::DescriptorSetAllocateInfo allocInfo;
+    allocInfo.setDescriptorPool(descriptorPool).setSetLayouts(layouts).setDescriptorSetCount(1);
+    return device.allocateDescriptorSets(allocInfo)[0];
+}
+
+vk::CommandBuffer AllocateCmdBuf()
+{
+    vk::CommandBufferAllocateInfo allocInfo;
+    allocInfo.setCommandBufferCount(1).setCommandPool(cmdPool).setLevel(
+        vk::CommandBufferLevel::ePrimary);
+    return device.allocateCommandBuffers(allocInfo)[0];
+}
+
+void UpdateDescriptorSet(vk::DescriptorSet set)
+{
+    vk::DescriptorBufferInfo bufferInfo;
+    bufferInfo.setBuffer(storageBuffer->buffer).setOffset(0).setRange(storageBuffer->size);
+
+    vk::WriteDescriptorSet writer;
+    writer.setDescriptorCount(1)
+        .setDescriptorType(vk::DescriptorType::eStorageBuffer)
+        .setDstBinding(0)
+        .setBufferInfo(bufferInfo)
+        .setDstSet(set);
+    device.updateDescriptorSets(writer, {});
 }
